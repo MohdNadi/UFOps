@@ -1,0 +1,15 @@
+name: TQ-00 Windows Runner Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/tq00-runner-smoke.yml'
+
+jobs:
+  windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Confirm Windows runner
+        shell: pwsh
+        run: Write-Output 'WINDOWS_RUNNER_OK'
