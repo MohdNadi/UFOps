@@ -1,6 +1,6 @@
 namespace UFOps.Core;
 
-public readonly record struct OperationId
+public sealed record OperationId
 {
     public Guid Value { get; }
 
@@ -25,10 +25,10 @@ public readonly record struct OperationId
             throw new FormatException("Invalid operation ID.");
         }
 
-        return value;
+        return value!;
     }
 
-    public static bool TryParse(string? text, out OperationId value)
+    public static bool TryParse(string? text, out OperationId? value)
     {
         if (Guid.TryParse(text, out var parsed) && parsed != Guid.Empty)
         {
@@ -36,14 +36,14 @@ public readonly record struct OperationId
             return true;
         }
 
-        value = default;
+        value = null;
         return false;
     }
 
     public override string ToString() => Value.ToString("D");
 }
 
-public readonly record struct EngineId
+public sealed record EngineId
 {
     public string Value { get; }
 
@@ -55,7 +55,7 @@ public readonly record struct EngineId
     public override string ToString() => Value;
 }
 
-public readonly record struct CapabilityId
+public sealed record CapabilityId
 {
     public string Value { get; }
 
@@ -67,27 +67,53 @@ public readonly record struct CapabilityId
     public override string ToString() => Value;
 }
 
-public readonly record struct ErrorCode
+public sealed record ErrorCode
 {
     public string Value { get; }
 
     public ErrorCode(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        if (value.Length > 96 || value[0] is < 'A' or > 'Z' || !value.Contains('.'))
+        if (value.Length is < 3 or > 96)
         {
-            throw new ArgumentException("Error code must be an uppercase dotted identifier.", nameof(value));
+            throw new ArgumentException("Error code must contain 3-96 characters.", nameof(value));
         }
 
-        foreach (var character in value)
+        var segments = value.Split('.');
+        if (segments.Length < 2 || segments.Any(segment => segment.Length == 0))
         {
-            if (!(character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' or '.'))
+            throw new ArgumentException("Error code must be a dotted identifier with no empty segments.", nameof(value));
+        }
+
+        foreach (var segment in segments)
+        {
+            if (segment[0] is < 'A' or > 'Z')
             {
-                throw new ArgumentException("Error code contains unsupported characters.", nameof(value));
+                throw new ArgumentException("Every error-code segment must start with an uppercase letter.", nameof(value));
+            }
+
+            foreach (var character in segment)
+            {
+                if (!(character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
+                {
+                    throw new ArgumentException("Error code contains unsupported characters.", nameof(value));
+                }
             }
         }
 
         Value = value;
+    }
+
+    public override string ToString() => Value;
+}
+
+public sealed record OperationPlanFingerprint
+{
+    public string Value { get; }
+
+    public OperationPlanFingerprint(string value)
+    {
+        Value = IdentifierRules.ValidateSha256(value, nameof(value));
     }
 
     public override string ToString() => Value;
@@ -126,5 +152,16 @@ internal static class IdentifierRules
         }
 
         return value;
+    }
+
+    internal static string ValidateSha256(string value, string parameterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+        if (value.Length != 64 || value.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException("SHA-256 must contain exactly 64 hexadecimal characters.", parameterName);
+        }
+
+        return value.ToLowerInvariant();
     }
 }

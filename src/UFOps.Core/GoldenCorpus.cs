@@ -15,25 +15,49 @@ public sealed record GoldenCorpusCase
         string sha256,
         IEnumerable<KeyValuePair<string, string>> expected)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        Id = IdentifierRules.Validate(id, nameof(id));
         ArgumentException.ThrowIfNullOrWhiteSpace(relativeInputPath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sha256);
         ArgumentNullException.ThrowIfNull(expected);
 
-        if (Path.IsPathRooted(relativeInputPath) || relativeInputPath.Split('/', '\\').Any(segment => segment == ".."))
+        var normalizedPath = relativeInputPath.Replace('\\', '/');
+        if (Path.IsPathRooted(relativeInputPath) || normalizedPath.StartsWith('/') || normalizedPath.EndsWith('/'))
         {
-            throw new ArgumentException("Corpus input paths must remain inside the corpus root.", nameof(relativeInputPath));
+            throw new ArgumentException("Corpus input paths must be non-rooted file paths inside the corpus root.", nameof(relativeInputPath));
         }
 
-        if (sha256.Length != 64 || sha256.Any(character => !Uri.IsHexDigit(character)))
+        var segments = normalizedPath.Split('/');
+        if (segments.Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or ".." || segment.Contains(':')))
         {
-            throw new ArgumentException("SHA-256 must contain exactly 64 hexadecimal characters.", nameof(sha256));
+            throw new ArgumentException("Corpus input paths contain an unsafe or ambiguous segment.", nameof(relativeInputPath));
         }
 
-        Id = id;
-        RelativeInputPath = relativeInputPath.Replace('\\', '/');
-        Sha256 = sha256.ToLowerInvariant();
-        Expected = expected.ToImmutableDictionary(StringComparer.Ordinal);
+        foreach (var invalid in Path.GetInvalidPathChars())
+        {
+            if (normalizedPath.Contains(invalid))
+            {
+                throw new ArgumentException("Corpus input path contains an invalid path character.", nameof(relativeInputPath));
+            }
+        }
+
+        var expectedBuilder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        foreach (var pair in expected)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(pair.Key);
+            ArgumentNullException.ThrowIfNull(pair.Value);
+            if (!expectedBuilder.TryAdd(pair.Key, pair.Value))
+            {
+                throw new ArgumentException($"Duplicate expected-result key: {pair.Key}.", nameof(expected));
+            }
+        }
+
+        if (expectedBuilder.Count == 0)
+        {
+            throw new ArgumentException("A corpus case must declare at least one expected result.", nameof(expected));
+        }
+
+        RelativeInputPath = normalizedPath;
+        Sha256 = IdentifierRules.ValidateSha256(sha256, nameof(sha256));
+        Expected = expectedBuilder.ToImmutable();
     }
 }
 
@@ -53,7 +77,7 @@ public sealed class GoldenCorpusManifest
             throw new ArgumentOutOfRangeException(nameof(schemaVersion), $"Only schema version {CurrentSchemaVersion} is supported.");
         }
 
-        ArgumentException.ThrowIfNullOrWhiteSpace(corpusId);
+        corpusId = IdentifierRules.Validate(corpusId, nameof(corpusId));
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
         ArgumentNullException.ThrowIfNull(cases);
 
@@ -61,6 +85,11 @@ public sealed class GoldenCorpusManifest
         if (materialized.IsDefaultOrEmpty)
         {
             throw new ArgumentException("A corpus manifest must contain at least one case.", nameof(cases));
+        }
+
+        if (materialized.Any(item => item is null))
+        {
+            throw new ArgumentException("A corpus manifest cannot contain null cases.", nameof(cases));
         }
 
         if (materialized.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != materialized.Length)

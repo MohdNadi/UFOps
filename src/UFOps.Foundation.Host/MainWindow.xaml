@@ -5,16 +5,19 @@
     Title="UFOps Foundation">
     <ScrollViewer>
         <Grid x:Name="RootGrid" Padding="32" Loaded="OnRootLoaded">
-            <StackPanel Spacing="14" MaxWidth="820" HorizontalAlignment="Left">
+            <StackPanel Spacing="14" MaxWidth="900" HorizontalAlignment="Left">
                 <TextBlock Text="UFOps Foundation" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock Text="Live foundation health and storage qualification" Opacity="0.72" />
+                <TextBlock Text="Live WinUI 3 + SQLite foundation runtime qualification" Opacity="0.72" />
                 <InfoBar x:Name="HealthInfo" IsOpen="True" Severity="Informational" Title="Checking foundation health..." />
                 <Grid ColumnSpacing="16" RowSpacing="10">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="190" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -26,11 +29,20 @@
                     <TextBlock x:Name="SchemaVersionText" Grid.Row="1" Grid.Column="1" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="SQLite quick_check" FontWeight="SemiBold" />
                     <TextBlock x:Name="QuickCheckText" Grid.Row="2" Grid.Column="1" />
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Windows App SDK" FontWeight="SemiBold" />
-                    <TextBlock Grid.Row="3" Grid.Column="1" Text="2.4.0 (self-contained)" />
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Journal mode" FontWeight="SemiBold" />
+                    <TextBlock x:Name="JournalModeText" Grid.Row="3" Grid.Column="1" />
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Foreign keys" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ForeignKeysText" Grid.Row="4" Grid.Column="1" />
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Metadata round-trip" FontWeight="SemiBold" />
+                    <TextBlock x:Name="MetadataRoundTripText" Grid.Row="5" Grid.Column="1" />
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Runtime evidence" FontWeight="SemiBold" />
+                    <TextBlock x:Name="EvidencePathText" Grid.Row="6" Grid.Column="1" TextWrapping="Wrap" />
                 </Grid>
-                <Button x:Name="RefreshButton" Content="Refresh health" Click="OnRefreshClicked" HorizontalAlignment="Left" />
-                <TextBlock Text="This Foundation host does not implement file discovery, query, mutation, or document-processing product engines." TextWrapping="Wrap" Opacity="0.65" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button x:Name="RefreshButton" Content="Run qualification again" Click="OnRefreshClicked" />
+                    <Button x:Name="OpenEvidenceButton" Content="Open evidence folder" Click="OnOpenEvidenceClicked" IsEnabled="False" />
+                </StackPanel>
+                <TextBlock Text="This Foundation host does not implement file discovery, query, mutation, document extraction, Teach-by-Example, or other product engines." TextWrapping="Wrap" Opacity="0.65" />
             </StackPanel>
         </Grid>
     </ScrollViewer>

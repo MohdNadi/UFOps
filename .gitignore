@@ -1,0 +1,11 @@
+[Bb]in/
+[Oo]bj/
+out/
+TestResults/
+.vs/
+.idea/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.pdb

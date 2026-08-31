@@ -11,6 +11,7 @@ public sealed record EngineExecutionContext
 
     public EngineExecutionContext(OperationId operationId, string workingDirectory, string evidenceDirectory)
     {
+        ArgumentNullException.ThrowIfNull(operationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(evidenceDirectory);
         OperationId = operationId;
@@ -29,6 +30,11 @@ public sealed record QualificationCheck
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(detail);
+        if (id.Length > 96 || id.Any(char.IsWhiteSpace))
+        {
+            throw new ArgumentException("Qualification check ID must contain at most 96 non-whitespace characters.", nameof(id));
+        }
+
         Id = id;
         Passed = passed;
         Detail = detail;
@@ -47,6 +53,11 @@ public sealed class EngineQualification
         if (materialized.IsDefaultOrEmpty)
         {
             throw new ArgumentException("Engine qualification must contain at least one check.", nameof(checks));
+        }
+
+        if (materialized.Any(check => check is null))
+        {
+            throw new ArgumentException("Engine qualification cannot contain null checks.", nameof(checks));
         }
 
         if (materialized.Select(check => check.Id).Distinct(StringComparer.Ordinal).Count() != materialized.Length)

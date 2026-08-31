@@ -7,7 +7,12 @@
   "required": ["schemaVersion", "corpusId", "description", "cases"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "corpusId": { "type": "string", "minLength": 1 },
+    "corpusId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
     "description": { "type": "string", "minLength": 1 },
     "cases": {
       "type": "array",
@@ -17,11 +22,22 @@
         "additionalProperties": false,
         "required": ["id", "relativeInputPath", "sha256", "expected"],
         "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "relativeInputPath": { "type": "string", "minLength": 1 },
+          "id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 96,
+            "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+          },
+          "relativeInputPath": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*//)(?!.*\\.\\./)(?!.*:).+[^/]$"
+          },
           "sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
           "expected": {
             "type": "object",
+            "minProperties": 1,
+            "propertyNames": { "minLength": 1 },
             "additionalProperties": { "type": "string" }
           }
         }

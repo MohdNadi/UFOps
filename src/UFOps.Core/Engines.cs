@@ -10,6 +10,7 @@ public sealed record EngineCapability
 
     public EngineCapability(CapabilityId id, int contractVersion, string description)
     {
+        ArgumentNullException.ThrowIfNull(id);
         ArgumentOutOfRangeException.ThrowIfLessThan(contractVersion, 1);
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
         Id = id;
@@ -27,14 +28,25 @@ public sealed class EngineDescriptor
 
     public EngineDescriptor(EngineId id, string name, Version version, IEnumerable<EngineCapability> capabilities)
     {
+        ArgumentNullException.ThrowIfNull(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(capabilities);
+
+        if (version.Major < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(version), "Engine versions must have a major version of at least 1.");
+        }
 
         var materialized = capabilities.ToImmutableArray();
         if (materialized.IsDefaultOrEmpty)
         {
             throw new ArgumentException("An engine must declare at least one capability.", nameof(capabilities));
+        }
+
+        if (materialized.Any(capability => capability is null))
+        {
+            throw new ArgumentException("An engine cannot declare null capabilities.", nameof(capabilities));
         }
 
         if (materialized.Select(capability => capability.Id).Distinct().Count() != materialized.Length)

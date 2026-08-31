@@ -21,6 +21,7 @@ public sealed record UFOpsError
 
     public UFOpsError(ErrorCode code, ErrorCategory category, string message, bool retryable = false)
     {
+        ArgumentNullException.ThrowIfNull(code);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
         Code = code;
         Category = category;
@@ -43,6 +44,23 @@ public sealed class Result<T>
 
     internal Result(bool success, T? value, UFOpsError? error)
     {
+        if (success)
+        {
+            if (value is null)
+            {
+                throw new ArgumentNullException(nameof(value), "A successful result must carry a value.");
+            }
+
+            if (error is not null)
+            {
+                throw new ArgumentException("A successful result cannot carry an error.", nameof(error));
+            }
+        }
+        else if (error is null)
+        {
+            throw new ArgumentNullException(nameof(error), "A failed result must carry a structured error.");
+        }
+
         IsSuccess = success;
         _value = value;
         Error = error;
@@ -53,11 +71,7 @@ public static class Result
 {
     public static Result<T> Success<T>(T value)
     {
-        if (value is null)
-        {
-            throw new ArgumentNullException(nameof(value));
-        }
-
+        ArgumentNullException.ThrowIfNull(value);
         return new Result<T>(true, value, null);
     }
 

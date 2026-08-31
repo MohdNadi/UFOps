@@ -4,7 +4,7 @@ namespace UFOps.Foundation.Storage;
 
 public sealed class FoundationDatabase
 {
-    private const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 1;
     private readonly string _databasePath;
     private readonly string _connectionString;
 
@@ -27,27 +27,47 @@ public sealed class FoundationDatabase
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_utc TEXT NOT NULL,
-                description TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS foundation_metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            INSERT OR IGNORE INTO schema_migrations(version, applied_utc, description)
-            VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'FREEZE-00 foundation schema');
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        await using (var journalCommand = connection.CreateCommand())
+        {
+            journalCommand.CommandText = "PRAGMA journal_mode=WAL;";
+            var journalMode = Convert.ToString(
+                await journalCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"Foundation database could not enter WAL journal mode. Actual mode: {journalMode}.");
+            }
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_utc TEXT NOT NULL,
+                    description TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS foundation_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO schema_migrations(version, applied_utc, description)
+                VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'FREEZE-00 foundation schema');
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var version = await GetSchemaVersionAsync(cancellationToken).ConfigureAwait(false);
         if (version != CurrentSchemaVersion)
         {
             throw new InvalidDataException($"Unsupported foundation database schema version: {version}.");
+        }
+
+        var quickCheck = await QuickCheckAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(quickCheck, "ok", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Foundation database integrity quick_check failed: {quickCheck}.");
         }
     }
 
@@ -60,10 +80,34 @@ public sealed class FoundationDatabase
         return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    public async ValueTask<string> GetJournalModeAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode;";
+        return Convert.ToString(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    public async ValueTask<bool> GetForeignKeysEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA foreign_keys;";
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture) == 1;
+    }
+
     public async ValueTask SetMetadataAsync(string key, string value, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(value);
+        if (key.Length > 256)
+        {
+            throw new ArgumentOutOfRangeException(nameof(key), "Foundation metadata keys cannot exceed 256 characters.");
+        }
+
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -97,10 +141,18 @@ public sealed class FoundationDatabase
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
         var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return connection;
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 }
