@@ -20,7 +20,7 @@ jobs:
   foundation-build-test:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,38 +32,77 @@ jobs:
         with:
           dotnet-version: '10.0.400'
 
-      - name: Restore and generate NuGet lock files
-        shell: pwsh
-        run: dotnet restore .\UFOps.slnx
-
-      - name: Materialize dependency locks into branch once
+      - name: Verify committed dependency lock set
         shell: pwsh
         run: |
-          $locks = Get-ChildItem -Path . -Filter packages.lock.json -Recurse -File | ForEach-Object {
-            $_.FullName.Substring((Get-Location).Path.Length + 1)
+          $projects = @(
+            '.\src\UFOps.Core\packages.lock.json',
+            '.\src\UFOps.EngineSdk\packages.lock.json',
+            '.\src\UFOps.Foundation.Storage\packages.lock.json',
+            '.\src\UFOps.Foundation.Host\packages.lock.json',
+            '.\tests\UFOps.Foundation.Tests\packages.lock.json'
+          )
+          foreach ($path in $projects) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing required committed lock file: $path" }
           }
-          if ($locks.Count -ne 5) { throw "Expected exactly 5 dependency lock files, found $($locks.Count)." }
-          git add -- $locks
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) {
-            'LOCK_FILES_ALREADY_MATERIALIZED=YES' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          } else {
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'FREEZE-00: materialize qualified NuGet lock files'
-            git push origin HEAD:freeze-00-foundation
-            'LOCK_FILES_MATERIALIZED_THIS_RUN=YES' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $actual = @(Get-ChildItem -Path . -Filter packages.lock.json -Recurse -File)
+          if ($actual.Count -ne $projects.Count) {
+            throw "Expected exactly $($projects.Count) committed lock files, found $($actual.Count)."
           }
 
-      - name: Stop superseded run after lock materialization
-        if: env.LOCK_FILES_MATERIALIZED_THIS_RUN == 'YES'
+      - name: Restore in NuGet locked mode
         shell: pwsh
         run: |
-          throw 'Dependency lock files were committed from the qualified Windows restore. This run is intentionally superseded; the automatically triggered run on the locked commit is authoritative.'
+          dotnet restore .\UFOps.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "Locked restore failed: $LASTEXITCODE" }
+          $lockDrift = git status --porcelain --untracked-files=all -- ':(glob)**/packages.lock.json'
+          if ($lockDrift) {
+            $lockDrift | Write-Host
+            throw 'Dependency lock files changed during locked restore.'
+          }
 
       - name: Build with warnings as errors
         shell: pwsh
         run: dotnet build .\UFOps.slnx -c Release --no-restore
+
+      - name: Capture deterministic managed assembly baseline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .\out\determinism -Force | Out-Null
+          $assemblies = @(
+            '.\src\UFOps.Core\bin\Release\net10.0\UFOps.Core.dll',
+            '.\src\UFOps.EngineSdk\bin\Release\net10.0\UFOps.EngineSdk.dll',
+            '.\src\UFOps.Foundation.Storage\bin\Release\net10.0\UFOps.Foundation.Storage.dll'
+          )
+          foreach ($assembly in $assemblies) {
+            if (-not (Test-Path -LiteralPath $assembly)) { throw "Missing deterministic-build target: $assembly" }
+          }
+          $assemblies | ForEach-Object {
+            $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $_
+          } | Set-Content -LiteralPath .\out\determinism\FIRST_BUILD_SHA256.txt -Encoding ascii
+
+      - name: Rebuild and verify deterministic managed assemblies
+        shell: pwsh
+        run: |
+          dotnet clean .\UFOps.slnx -c Release
+          if ($LASTEXITCODE -ne 0) { throw "Clean failed: $LASTEXITCODE" }
+          dotnet build .\UFOps.slnx -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Second build failed: $LASTEXITCODE" }
+          $assemblies = @(
+            '.\src\UFOps.Core\bin\Release\net10.0\UFOps.Core.dll',
+            '.\src\UFOps.EngineSdk\bin\Release\net10.0\UFOps.EngineSdk.dll',
+            '.\src\UFOps.Foundation.Storage\bin\Release\net10.0\UFOps.Foundation.Storage.dll'
+          )
+          $assemblies | ForEach-Object {
+            $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $_
+          } | Set-Content -LiteralPath .\out\determinism\SECOND_BUILD_SHA256.txt -Encoding ascii
+          $first = Get-Content -LiteralPath .\out\determinism\FIRST_BUILD_SHA256.txt
+          $second = Get-Content -LiteralPath .\out\determinism\SECOND_BUILD_SHA256.txt
+          if (Compare-Object -ReferenceObject $first -DifferenceObject $second) {
+            throw 'Managed Foundation assemblies are not reproducible across consecutive clean builds.'
+          }
 
       - name: Run real Foundation tests with Microsoft.Testing.Platform
         shell: pwsh
@@ -81,34 +120,31 @@ jobs:
         shell: pwsh
         run: |
           dotnet publish .\src\UFOps.Foundation.Host\UFOps.Foundation.Host.csproj -c Release -r win-x64 --no-restore --self-contained true -o .\out\FoundationHost
+          if ($LASTEXITCODE -ne 0) { throw "WinUI publish failed: $LASTEXITCODE" }
           if (-not (Test-Path -LiteralPath .\out\FoundationHost\UFOps.Foundation.Host.exe)) {
             throw 'Foundation host executable was not produced.'
           }
 
-      - name: Verify dependency lock files were generated
+      - name: Verify repository remains clean after qualification
         shell: pwsh
         run: |
-          $projects = @(
-            '.\src\UFOps.Core\packages.lock.json',
-            '.\src\UFOps.EngineSdk\packages.lock.json',
-            '.\src\UFOps.Foundation.Storage\packages.lock.json',
-            '.\src\UFOps.Foundation.Host\packages.lock.json',
-            '.\tests\UFOps.Foundation.Tests\packages.lock.json'
-          )
-          foreach ($path in $projects) {
-            if (-not (Test-Path -LiteralPath $path)) { throw "Missing required lock file: $path" }
+          $changes = git status --porcelain --untracked-files=all -- ':!out/**'
+          if ($changes) {
+            $changes | Write-Host
+            throw 'Qualification modified tracked or unexpected repository content.'
           }
-          git diff --exit-code -- $projects
-          if ($LASTEXITCODE -ne 0) { throw 'Dependency lock files drifted during qualification.' }
 
-      - name: Build evidence package
+      - name: Build evidence and runtime candidate packages
         shell: pwsh
         run: |
           $evidence = '.\out\evidence'
           New-Item -ItemType Directory -Path $evidence -Force | Out-Null
           Copy-Item .\out\TestResults\FOUNDATION_TEST_RUN.txt $evidence\FOUNDATION_TEST_RUN.txt
+          Copy-Item .\out\determinism\FIRST_BUILD_SHA256.txt $evidence\FIRST_BUILD_SHA256.txt
+          Copy-Item .\out\determinism\SECOND_BUILD_SHA256.txt $evidence\SECOND_BUILD_SHA256.txt
           dotnet --info | Set-Content -LiteralPath $evidence\DOTNET_INFO.txt -Encoding utf8
-          Get-ChildItem -Path . -Filter packages.lock.json -Recurse | Sort-Object FullName | ForEach-Object {
+          git rev-parse HEAD | Set-Content -LiteralPath $evidence\COMMIT_SHA.txt -Encoding ascii
+          Get-ChildItem -Path . -Filter packages.lock.json -Recurse -File | Sort-Object FullName | ForEach-Object {
             $safeName = ($_.FullName.Substring((Get-Location).Path.Length + 1) -replace '[\\/:*?"<>|]', '_')
             Copy-Item $_.FullName (Join-Path $evidence $safeName)
           }
@@ -116,25 +152,43 @@ jobs:
             $relative = $_.FullName.Substring((Resolve-Path .\out\FoundationHost).Path.Length + 1)
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
-          } | Set-Content -LiteralPath $evidence\FOUNDATION_HOST_SHA256.txt -Encoding utf8
+          } | Set-Content -LiteralPath $evidence\FOUNDATION_HOST_SHA256.txt -Encoding ascii
           @(
             'Gate: FREEZE-00 Foundation',
             "Commit: $env:GITHUB_SHA",
             "Run: $env:GITHUB_RUN_ID",
-            'Restore: PASS',
-            'Build: PASS',
+            'NuGet locked restore: PASS',
+            'Warnings-as-errors build: PASS',
+            'Managed assembly reproducibility: PASS',
             'Real Foundation tests: PASS',
             'WinUI Foundation host publish: PASS',
-            'Dependency lock generation: PASS',
             'Dependency lock drift: NONE',
+            'Unexpected repository drift: NONE',
             'Test runner: Microsoft.Testing.Platform',
-            'Freeze status: CANDIDATE ONLY'
+            'Freeze status: CANDIDATE ONLY — interactive Windows runtime qualification still required'
           ) | Set-Content -LiteralPath $evidence\FOUNDATION_EVIDENCE.txt -Encoding utf8
           Get-ChildItem $evidence -File | Sort-Object Name | ForEach-Object {
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $_.Name
           } | Set-Content -LiteralPath $evidence\MANIFEST_SHA256.txt -Encoding ascii
           Compress-Archive -Path $evidence\* -DestinationPath .\out\FREEZE00_FOUNDATION_CANDIDATE_EVIDENCE.zip -CompressionLevel Optimal -Force
+
+          $runtimeRoot = '.\out\runtime-package'
+          New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+          Copy-Item .\out\FoundationHost\* $runtimeRoot -Recurse -Force
+          @(
+            'UFOps FREEZE-00 Foundation Runtime Qualification Candidate',
+            "Commit: $env:GITHUB_SHA",
+            'Purpose: run the real self-contained WinUI 3 Foundation host on an interactive Windows 11 x64 device.',
+            'Expected visible result after launch: Foundation health: PASS.',
+            'This is a qualification host, not the final product UI.'
+          ) | Set-Content -LiteralPath $runtimeRoot\RUNTIME_QUALIFICATION.txt -Encoding utf8
+          Get-ChildItem $runtimeRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring((Resolve-Path $runtimeRoot).Path.Length + 1)
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
+          } | Set-Content -LiteralPath $runtimeRoot\MANIFEST_SHA256.txt -Encoding ascii
+          Compress-Archive -Path $runtimeRoot\* -DestinationPath .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1.zip -CompressionLevel Optimal -Force
 
       - name: Upload Foundation evidence
         uses: actions/upload-artifact@v4
@@ -144,10 +198,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload runnable Foundation host candidate
+      - name: Upload single runtime qualification package
         uses: actions/upload-artifact@v4
         with:
-          name: FREEZE00_FOUNDATION_HOST_CANDIDATE
-          path: .\out\FoundationHost\**
+          name: FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1
+          path: .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1.zip
           if-no-files-found: error
           retention-days: 30
