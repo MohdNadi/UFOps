@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/UFOps.Core/UFOps.Core.csproj" />
+    <ProjectReference Include="../../src/UFOps.EngineSdk/UFOps.EngineSdk.csproj" />
+    <ProjectReference Include="../../src/UFOps.Discovery/UFOps.Discovery.csproj" />
+    <ProjectReference Include="../../src/UFOps.Query/UFOps.Query.csproj" />
+  </ItemGroup>
+</Project>
