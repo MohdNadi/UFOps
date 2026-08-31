@@ -50,6 +50,14 @@ jobs:
             throw 'Foundation test evidence does not contain a success summary.'
           }
 
+      - name: Publish self-contained WinUI Foundation host
+        shell: pwsh
+        run: |
+          dotnet publish .\src\UFOps.Foundation.Host\UFOps.Foundation.Host.csproj -c Release -r win-x64 --no-restore --self-contained true -o .\out\FoundationHost
+          if (-not (Test-Path -LiteralPath .\out\FoundationHost\UFOps.Foundation.Host.exe)) {
+            throw 'Foundation host executable was not produced.'
+          }
+
       - name: Verify dependency lock files were generated
         shell: pwsh
         run: |
@@ -57,6 +65,7 @@ jobs:
             '.\src\UFOps.Core\packages.lock.json',
             '.\src\UFOps.EngineSdk\packages.lock.json',
             '.\src\UFOps.Foundation.Storage\packages.lock.json',
+            '.\src\UFOps.Foundation.Host\packages.lock.json',
             '.\tests\UFOps.Foundation.Tests\packages.lock.json'
           )
           foreach ($path in $projects) {
@@ -74,6 +83,11 @@ jobs:
             $safeName = ($_.FullName.Substring((Get-Location).Path.Length + 1) -replace '[\\/:*?"<>|]', '_')
             Copy-Item $_.FullName (Join-Path $evidence $safeName)
           }
+          Get-ChildItem .\out\FoundationHost -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring((Resolve-Path .\out\FoundationHost).Path.Length + 1)
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
+          } | Set-Content -LiteralPath $evidence\FOUNDATION_HOST_SHA256.txt -Encoding utf8
           @(
             'Gate: FREEZE-00 Foundation',
             "Commit: $env:GITHUB_SHA",
@@ -81,6 +95,7 @@ jobs:
             'Restore: PASS',
             'Build: PASS',
             'Real Foundation tests: PASS',
+            'WinUI Foundation host publish: PASS',
             'Dependency lock generation: PASS',
             'Test runner: Microsoft.Testing.Platform',
             'Freeze status: CANDIDATE ONLY'
@@ -96,5 +111,13 @@ jobs:
         with:
           name: FREEZE00_FOUNDATION_CANDIDATE_EVIDENCE
           path: .\out\FREEZE00_FOUNDATION_CANDIDATE_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload runnable Foundation host candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: FREEZE00_FOUNDATION_HOST_CANDIDATE
+          path: .\out\FoundationHost\**
           if-no-files-found: error
           retention-days: 30

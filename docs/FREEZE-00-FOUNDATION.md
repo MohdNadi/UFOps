@@ -2,16 +2,17 @@
 
 Status: IMPLEMENTATION CANDIDATE — not frozen until Windows qualification passes.
 
-This gate establishes only shared infrastructure that later product engines depend on. It does not claim Discovery, Query, file actions, document extraction, Teach-by-Example, classification, reporting, or UI product behavior.
+This gate establishes only shared infrastructure that later product engines depend on. It does not claim Discovery, Query, file actions, document extraction, Teach-by-Example, classification, reporting, or general product UI behavior.
 
 ## Locked technical baseline
 
 - C# / .NET 10, SDK 10.0.400
-- WinUI 3 through stable Microsoft.WindowsAppSDK 2.4.0 (integration is required before this gate can freeze)
+- WinUI 3 through stable Microsoft.WindowsAppSDK 2.4.0
+- Windows SDK BuildTools stable 10.0.26100.9169
 - SQLite through Microsoft.Data.Sqlite 10.0.11
 - Central package management and NuGet lock files
 - Warnings as errors and deterministic builds
-- xUnit v3 for Foundation qualification
+- xUnit v3 with Microsoft.Testing.Platform v2 for Foundation qualification
 
 ## Foundation contracts
 
@@ -21,6 +22,7 @@ This gate establishes only shared infrastructure that later product engines depe
 - Append-only JSONL evidence writer
 - Golden Corpus manifest model and JSON schema
 - Real SQLite Foundation database with schema versioning, WAL, metadata persistence, and integrity check
+- Real WinUI 3 Foundation health host that initializes and verifies the same SQLite foundation used by later engines
 
 ## Non-negotiable constraints
 
