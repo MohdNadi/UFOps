@@ -119,7 +119,7 @@ jobs:
       - name: Publish self-contained WinUI Foundation host
         shell: pwsh
         run: |
-          dotnet publish .\src\UFOps.Foundation.Host\UFOps.Foundation.Host.csproj -c Release -r win-x64 --no-restore --self-contained true -o .\out\FoundationHost
+          dotnet publish .\src\UFOps.Foundation.Host\UFOps.Foundation.Host.csproj -c Release -r win-x64 --no-restore --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o .\out\FoundationHost
           if ($LASTEXITCODE -ne 0) { throw "WinUI publish failed: $LASTEXITCODE" }
           if (-not (Test-Path -LiteralPath .\out\FoundationHost\UFOps.Foundation.Host.exe)) {
             throw 'Foundation host executable was not produced.'
@@ -162,6 +162,10 @@ jobs:
             'Managed assembly reproducibility: PASS',
             'Real Foundation tests: PASS',
             'WinUI Foundation host publish: PASS',
+            'Unpackaged self-contained deployment: EnableMsixTooling=true',
+            'PublishTrimmed: false',
+            'PublishSingleFile: false',
+            'PublishReadyToRun: false',
             'Dependency lock drift: NONE',
             'Unexpected repository drift: NONE',
             'Test runner: Microsoft.Testing.Platform',
@@ -177,10 +181,11 @@ jobs:
           New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
           Copy-Item .\out\FoundationHost\* $runtimeRoot -Recurse -Force
           @(
-            'UFOps FREEZE-00 Foundation Runtime Qualification Candidate',
+            'UFOps FREEZE-00 Foundation Runtime Qualification Candidate V2',
             "Commit: $env:GITHUB_SHA",
             'Purpose: run the real self-contained WinUI 3 Foundation host on an interactive Windows 11 x64 device.',
             'Expected visible result after launch: Foundation health: PASS.',
+            'This candidate includes the unpackaged self-contained WinUI publish startup correction.',
             'This is a qualification host, not the final product UI.'
           ) | Set-Content -LiteralPath $runtimeRoot\RUNTIME_QUALIFICATION.txt -Encoding utf8
           Get-ChildItem $runtimeRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
@@ -188,7 +193,7 @@ jobs:
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
           } | Set-Content -LiteralPath $runtimeRoot\MANIFEST_SHA256.txt -Encoding ascii
-          Compress-Archive -Path $runtimeRoot\* -DestinationPath .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1.zip -CompressionLevel Optimal -Force
+          Compress-Archive -Path $runtimeRoot\* -DestinationPath .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2.zip -CompressionLevel Optimal -Force
 
       - name: Upload Foundation evidence
         uses: actions/upload-artifact@v4
@@ -201,7 +206,7 @@ jobs:
       - name: Upload single runtime qualification package
         uses: actions/upload-artifact@v4
         with:
-          name: FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1
-          path: .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V1.zip
+          name: FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2
+          path: .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2.zip
           if-no-files-found: error
           retention-days: 30
