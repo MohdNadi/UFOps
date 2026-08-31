@@ -1,0 +1,86 @@
+name: TQ-00 Build and Windows Qualification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'bootstrap/TQ00/**'
+      - '.github/workflows/tq00-build.yml'
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\bootstrap\TQ00\UFOps.TQ00.csproj
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build .\bootstrap\TQ00\UFOps.TQ00.csproj -c Release --no-restore
+
+      - name: Publish Windows x64 self-contained single EXE
+        shell: pwsh
+        run: dotnet publish .\bootstrap\TQ00\UFOps.TQ00.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o .\out\publish
+
+      - name: Internal self-test on Windows
+        shell: pwsh
+        run: |
+          & .\out\publish\UFOps.TQ00.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "TQ-00 self-test failed: $LASTEXITCODE" }
+
+      - name: Full read-only Windows smoke qualification
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .\out\smoke -Force | Out-Null
+          & .\out\publish\UFOps.TQ00.exe --output .\out\smoke | Tee-Object -FilePath .\out\WINDOWS_EXECUTION_LOG.txt
+          if ($LASTEXITCODE -ne 0) { throw "TQ-00 full Windows scan failed: $LASTEXITCODE" }
+          if (-not (Select-String -LiteralPath .\out\WINDOWS_EXECUTION_LOG.txt -SimpleMatch 'TQ00_SCAN_COMPLETE=PASS' -Quiet)) { throw 'Missing TQ00_SCAN_COMPLETE=PASS marker' }
+          $evidence = Get-ChildItem .\out\smoke\UFOPS_TQ00_EVIDENCE_*.zip | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if ($null -eq $evidence) { throw 'TQ-00 did not create an evidence ZIP' }
+
+      - name: Build delivery package and SHA-256 manifest
+        shell: pwsh
+        run: |
+          $delivery = '.\out\delivery'
+          New-Item -ItemType Directory -Path $delivery -Force | Out-Null
+          Copy-Item .\out\publish\UFOps.TQ00.exe $delivery\UFOps.TQ00.exe
+          Copy-Item .\out\WINDOWS_EXECUTION_LOG.txt $delivery\WINDOWS_EXECUTION_LOG.txt
+          $evidence = Get-ChildItem .\out\smoke\UFOPS_TQ00_EVIDENCE_*.zip | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          Copy-Item $evidence.FullName $delivery\WINDOWS_QUALIFICATION_EVIDENCE.zip
+          @(
+            'UFOps TQ-00 Windows Qualification V1',
+            "Repository commit: $env:GITHUB_SHA",
+            "Workflow run: $env:GITHUB_RUN_ID",
+            'Build host: GitHub Actions windows-latest',
+            'Internal self-test: PASS',
+            'Full Windows execution: PASS',
+            'Delivery: ready-to-run self-contained Windows x64 executable',
+            'Behavior: read-only environment qualification'
+          ) | Set-Content -LiteralPath $delivery\BUILD_PROVENANCE.txt -Encoding utf8
+          Get-ChildItem $delivery -File | Sort-Object Name | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content -LiteralPath $delivery\MANIFEST_SHA256.txt -Encoding ascii
+          $package = '.\out\UFOPS_TQ00_WINDOWS_QUALIFICATION_V1.zip'
+          if (Test-Path $package) { Remove-Item $package -Force }
+          Compress-Archive -Path $delivery\* -DestinationPath $package -CompressionLevel Optimal
+          Get-FileHash $package -Algorithm SHA256 | Format-List
+
+      - name: Upload single delivery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: UFOPS_TQ00_WINDOWS_QUALIFICATION_V1
+          path: .\out\UFOPS_TQ00_WINDOWS_QUALIFICATION_V1.zip
+          if-no-files-found: error
+          retention-days: 30
