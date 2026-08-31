@@ -151,13 +151,27 @@ jobs:
           Copy-Item .\out\TestResults\DISCOVERY_TEST_RUN.txt $evidence\DISCOVERY_TEST_RUN.txt
           Copy-Item .\out\determinism\DISCOVERY_FIRST_SHA256.txt $evidence\DISCOVERY_FIRST_SHA256.txt
           Copy-Item .\out\determinism\DISCOVERY_SECOND_SHA256.txt $evidence\DISCOVERY_SECOND_SHA256.txt
-          git rev-parse HEAD | Set-Content $evidence\COMMIT_SHA.txt -Encoding ascii
-          git rev-parse HEAD^{tree} | Set-Content $evidence\TREE_SHA.txt -Encoding ascii
+
+          $commitSha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $commitSha -notmatch '^[0-9a-f]{40}$') {
+            throw 'Unable to resolve one exact commit SHA for evidence binding.'
+          }
+          $treeSha = (git rev-parse 'HEAD^{tree}').Trim()
+          if ($LASTEXITCODE -ne 0 -or $treeSha -notmatch '^[0-9a-f]{40}$') {
+            throw 'Unable to resolve one exact tree SHA for evidence binding.'
+          }
+          if ($commitSha -ne $env:GITHUB_SHA) {
+            throw "Checked-out commit $commitSha does not match GITHUB_SHA $env:GITHUB_SHA."
+          }
+          $commitSha | Set-Content $evidence\COMMIT_SHA.txt -Encoding ascii
+          $treeSha | Set-Content $evidence\TREE_SHA.txt -Encoding ascii
+
           Get-ComputerInfo | Out-String | Set-Content $evidence\WINDOWS_ENVIRONMENT.txt -Encoding utf8
           dotnet --info | Set-Content $evidence\DOTNET_INFO.txt -Encoding utf8
           @(
             'Gate: FREEZE-01 Discovery',
-            "Commit: $env:GITHUB_SHA",
+            "Commit: $commitSha",
+            "Tree: $treeSha",
             "Run: $env:GITHUB_RUN_ID",
             'Frozen FREEZE-00 ancestry/immutability: PASS',
             'NuGet locked restore: PASS',
