@@ -7,6 +7,8 @@ namespace UFOps.Reconciliation;
 
 public sealed class ReconciliationEngine : IEngine
 {
+    private readonly ErrorCode _cancelledCode = new("RECONCILIATION.CANCELLED");
+
     public EngineDescriptor Descriptor { get; } = new(
         new EngineId("list.reconciliation"),
         "List Reconciliation",
@@ -79,17 +81,17 @@ public sealed class ReconciliationEngine : IEngine
             groups)));
     }
 
-    public ValueTask<Result<EngineQualification>> QualifyAsync(
+    public async ValueTask<Result<EngineQualification>> QualifyAsync(
         EngineExecutionContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (cancellationToken.IsCancellationRequested)
         {
-            return ValueTask.FromResult(Result.Failure<EngineQualification>(new UFOpsError(
-                new ErrorCode("RECONCILIATION.CANCELLED"),
+            return Result.Failure<EngineQualification>(new UFOpsError(
+                _cancelledCode,
                 ErrorCategory.Cancelled,
-                "Reconciliation qualification was cancelled before it started.")));
+                "Reconciliation qualification was cancelled before it started."));
         }
 
         Directory.CreateDirectory(context.WorkingDirectory);
@@ -111,18 +113,18 @@ public sealed class ReconciliationEngine : IEngine
             new ReconciliationItem("R2", "MRN-002")
         };
         var request = new ReconciliationRequest("left", left, "right", right, policy);
-        var first = ReconcileAsync(request, cancellationToken).Result;
+        var first = await ReconcileAsync(request, cancellationToken);
         var reordered = new ReconciliationRequest(
             "left",
             left.Reverse(),
             "right",
             right.Reverse(),
             policy);
-        var second = ReconcileAsync(reordered, cancellationToken).Result;
+        var second = await ReconcileAsync(reordered, cancellationToken);
 
-        var cancellationSource = new CancellationTokenSource();
+        using var cancellationSource = new CancellationTokenSource();
         cancellationSource.Cancel();
-        var cancelled = ReconcileAsync(request, cancellationSource.Token).Result;
+        var cancelled = await ReconcileAsync(request, cancellationSource.Token);
 
         var checks = new List<QualificationCheck>
         {
@@ -150,7 +152,7 @@ public sealed class ReconciliationEngine : IEngine
             new(
                 "structured-cancellation",
                 cancelled.IsFailure
-                    && cancelled.Error?.Code.Value == "RECONCILIATION.CANCELLED"
+                    && cancelled.Error?.Code.Value == _cancelledCode.Value
                     && cancelled.Error.Category == ErrorCategory.Cancelled,
                 "Cancellation must fail closed with a structured cancellation result and no partial success."),
             new(
@@ -159,10 +161,10 @@ public sealed class ReconciliationEngine : IEngine
                 "Reconciliation must not mutate source item values.")
         };
 
-        return ValueTask.FromResult(Result.Success(new EngineQualification(checks)));
+        return Result.Success(new EngineQualification(checks));
     }
 
-    private static Result<ReconciliationResult>? AddItems(
+    private Result<ReconciliationResult>? AddItems(
         ImmutableArray<ReconciliationItem> items,
         ReconciliationNormalizationPolicy policy,
         Dictionary<string, Bucket> buckets,
@@ -280,8 +282,8 @@ public sealed class ReconciliationEngine : IEngine
         return true;
     }
 
-    private static Result<ReconciliationResult> CancelledFailure() => Result.Failure<ReconciliationResult>(new UFOpsError(
-        new ErrorCode("RECONCILIATION.CANCELLED"),
+    private Result<ReconciliationResult> CancelledFailure() => Result.Failure<ReconciliationResult>(new UFOpsError(
+        _cancelledCode,
         ErrorCategory.Cancelled,
         "Reconciliation was cancelled before completion."));
 
