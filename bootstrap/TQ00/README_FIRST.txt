@@ -1,0 +1,1 @@
+TQ-00 is intentionally read-only. It must never install, uninstall, enable, disable, or reconfigure system components. Its sole job is to discover and report the actual Windows qualification environment.
