@@ -12,7 +12,7 @@ This gate establishes only shared infrastructure that later product engines depe
 - SQLite through Microsoft.Data.Sqlite 10.0.11
 - Central package management and NuGet lock files
 - Warnings as errors and deterministic builds
-- xUnit v3 with Microsoft.Testing.Platform v2 for Foundation qualification
+- xUnit v3 4.0.0 with the explicit Microsoft.Testing.Platform v2 runner package
 
 ## Foundation contracts
 
