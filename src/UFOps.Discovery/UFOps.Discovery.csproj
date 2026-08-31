@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>UFOps.Discovery</AssemblyName>
+    <RootNamespace>UFOps.Discovery</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UFOps.Core/UFOps.Core.csproj" />
+    <ProjectReference Include="../UFOps.EngineSdk/UFOps.EngineSdk.csproj" />
+  </ItemGroup>
+</Project>
