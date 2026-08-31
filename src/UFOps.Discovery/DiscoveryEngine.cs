@@ -37,10 +37,11 @@ public sealed class DiscoveryEngine : IEngine
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var engineId = Descriptor.Id.Value;
 
         if (cancellationToken.IsCancellationRequested)
         {
-            return ValueTask.FromResult(CancelledFailure());
+            return ValueTask.FromResult(CancelledFailure(engineId));
         }
 
         var issues = new List<DiscoveryIssue>();
@@ -50,7 +51,7 @@ public sealed class DiscoveryEngine : IEngine
             return ValueTask.FromResult(Result.Failure<DiscoveryResult>(new UFOpsError(
                 new ErrorCode("DISCOVERY.NO_VALID_ROOTS"),
                 ErrorCategory.Validation,
-                "None of the supplied discovery roots could be normalized.")));
+                $"Engine {engineId} could not normalize any supplied discovery root.")));
         }
 
         var entries = new Dictionary<string, DiscoveryEntry>(PathComparer);
@@ -156,7 +157,7 @@ public sealed class DiscoveryEngine : IEngine
 
     private static List<string> NormalizeRoots(
         ImmutableArray<string> roots,
-        ICollection<DiscoveryIssue> issues)
+        List<DiscoveryIssue> issues)
     {
         var normalized = new List<string>(roots.Length);
         var seen = new HashSet<string>(PathComparer);
@@ -202,8 +203,8 @@ public sealed class DiscoveryEngine : IEngine
     private static void ProcessRoot(
         string root,
         DiscoveryRequest request,
-        IDictionary<string, DiscoveryEntry> entries,
-        ICollection<DiscoveryIssue> issues,
+        Dictionary<string, DiscoveryEntry> entries,
+        List<DiscoveryIssue> issues,
         CancellationToken cancellationToken,
         ref bool wasCancelled)
     {
@@ -319,8 +320,8 @@ public sealed class DiscoveryEngine : IEngine
         string root,
         string path,
         FileAttributes attributes,
-        IDictionary<string, DiscoveryEntry> entries,
-        ICollection<DiscoveryIssue> issues)
+        Dictionary<string, DiscoveryEntry> entries,
+        List<DiscoveryIssue> issues)
     {
         if (entries.ContainsKey(path))
         {
@@ -444,7 +445,7 @@ public sealed class DiscoveryEngine : IEngine
             new UFOpsError(new ErrorCode(code), category, exception.Message, retryable));
     }
 
-    private static void AddReparseSkippedIssue(ICollection<DiscoveryIssue> issues, string path)
+    private static void AddReparseSkippedIssue(List<DiscoveryIssue> issues, string path)
     {
         issues.Add(new DiscoveryIssue(
             path,
@@ -455,7 +456,7 @@ public sealed class DiscoveryEngine : IEngine
                 "Reparse point was skipped by the active discovery policy.")));
     }
 
-    private static void AddCancellationIssue(ICollection<DiscoveryIssue> issues, string path)
+    private static void AddCancellationIssue(List<DiscoveryIssue> issues, string path)
     {
         issues.Add(new DiscoveryIssue(
             path,
@@ -466,10 +467,10 @@ public sealed class DiscoveryEngine : IEngine
                 "Discovery was cancelled; returned entries are partial.")));
     }
 
-    private static Result<DiscoveryResult> CancelledFailure() => Result.Failure<DiscoveryResult>(new UFOpsError(
+    private static Result<DiscoveryResult> CancelledFailure(string engineId) => Result.Failure<DiscoveryResult>(new UFOpsError(
         new ErrorCode("DISCOVERY.CANCELLED"),
         ErrorCategory.Cancelled,
-        "Discovery was cancelled before it started."));
+        $"Engine {engineId} was cancelled before discovery started."));
 
     private static string NormalizePath(string path)
     {
