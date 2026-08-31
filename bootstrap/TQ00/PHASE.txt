@@ -1,0 +1,2 @@
+Current gate: TQ-00 Windows Qualification
+Next acceptance condition: a successful Windows-hosted build/run evidence path.
