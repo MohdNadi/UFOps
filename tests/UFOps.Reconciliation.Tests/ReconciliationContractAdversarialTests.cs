@@ -60,6 +60,7 @@ public sealed class ReconciliationContractAdversarialTests
     public void InvalidItemIdsAreRejected(string itemId)
     {
         Assert.Throws<ArgumentException>(() => new ReconciliationItem(itemId, "value"));
+        Assert.Throws<ArgumentException>(() => new ReconciledItem(itemId, "value", "value"));
     }
 
     [Theory]
@@ -74,6 +75,11 @@ public sealed class ReconciliationContractAdversarialTests
             "right",
             [],
             Policy()));
+        Assert.Throws<ArgumentException>(() => new ReconciliationResult(
+            sourceId,
+            "right",
+            Policy(),
+            []));
     }
 
     [Fact]
@@ -103,6 +109,55 @@ public sealed class ReconciliationContractAdversarialTests
             "right",
             policy,
             [first, second]));
+    }
+
+    [Fact]
+    public void ItemWhoseNormalizedValueDoesNotMatchGroupKeyIsRejected()
+    {
+        var inconsistent = new ReconciliationGroup(
+            "expected",
+            [new ReconciledItem("L1", "raw", "different")],
+            []);
+
+        Assert.Throws<ArgumentException>(() => new ReconciliationResult(
+            "left",
+            "right",
+            Policy(),
+            [inconsistent]));
+    }
+
+    [Fact]
+    public void RepeatedSourceItemIdentityAcrossGroupsIsRejected()
+    {
+        var first = new ReconciliationGroup(
+            "A",
+            [new ReconciledItem("L1", "A", "A")],
+            []);
+        var second = new ReconciliationGroup(
+            "B",
+            [new ReconciledItem("L1", "B", "B")],
+            []);
+
+        Assert.Throws<ArgumentException>(() => new ReconciliationResult(
+            "left",
+            "right",
+            Policy(),
+            [first, second]));
+    }
+
+    [Fact]
+    public void ResultConstructorCanonicalizesGroupOrdering()
+    {
+        var result = new ReconciliationResult(
+            "left",
+            "right",
+            Policy(),
+            [
+                new ReconciliationGroup("B", [new ReconciledItem("L2", "B", "B")], []),
+                new ReconciliationGroup("A", [new ReconciledItem("L1", "A", "A")], [])
+            ]);
+
+        Assert.Equal(["A", "B"], result.Groups.Select(group => group.CanonicalKey));
     }
 
     private static ReconciliationNormalizationPolicy Policy() => new(
