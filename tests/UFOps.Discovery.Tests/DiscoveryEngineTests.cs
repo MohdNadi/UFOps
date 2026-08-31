@@ -260,7 +260,8 @@ public sealed class DiscoveryEngineTests
         var evidence = CreateTempRoot();
         try
         {
-            IEngine engine = new DiscoveryEngine();
+            var engine = new DiscoveryEngine();
+            Assert.IsAssignableFrom<IEngine>(engine);
             var result = await engine.QualifyAsync(
                 new EngineExecutionContext(OperationId.New(), root, evidence),
                 TestContext.Current.CancellationToken);
