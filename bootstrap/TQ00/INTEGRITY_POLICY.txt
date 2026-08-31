@@ -1,0 +1,1 @@
+Every executable delivery package must include SHA-256 integrity evidence and build/test provenance. No Windows-specific executable may be presented as qualified until it has actually run on a Windows qualification target.
