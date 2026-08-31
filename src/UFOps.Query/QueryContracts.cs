@@ -69,6 +69,7 @@ public sealed record SelectionRule
             throw new ArgumentException("Selection rule ID must contain at most 96 non-whitespace characters.", nameof(id));
         }
 
+        ValidateEnums(stage, kind, field, entryKind, casePolicy);
         ValidateShape(kind, field, value, entryKind, minimumBytes, maximumBytes);
 
         Id = id;
@@ -80,6 +81,39 @@ public sealed record SelectionRule
         MinimumBytes = minimumBytes;
         MaximumBytes = maximumBytes;
         CasePolicy = casePolicy;
+    }
+
+    private static void ValidateEnums(
+        SelectionRuleStage stage,
+        SelectionRuleKind kind,
+        SelectionField? field,
+        DiscoveryEntryKind? entryKind,
+        SelectionCasePolicy casePolicy)
+    {
+        if (!Enum.IsDefined(stage))
+        {
+            throw new ArgumentOutOfRangeException(nameof(stage), "Selection rule stage is not defined.");
+        }
+
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), "Selection rule kind is not defined.");
+        }
+
+        if (field is not null && !Enum.IsDefined(field.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(field), "Selection field is not defined.");
+        }
+
+        if (entryKind is not null && !Enum.IsDefined(entryKind.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(entryKind), "Discovery entry kind is not defined.");
+        }
+
+        if (!Enum.IsDefined(casePolicy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(casePolicy), "Selection case policy is not defined.");
+        }
     }
 
     private static void ValidateShape(
@@ -213,10 +247,26 @@ public sealed record SelectionDecision
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(matchedRuleIds);
+        if (!Enum.IsDefined(disposition))
+        {
+            throw new ArgumentOutOfRangeException(nameof(disposition), "Selection disposition is not defined.");
+        }
+
+        var dispositionIsSelected = disposition is SelectionDisposition.Selected or SelectionDisposition.ReIncludedByExcept;
+        if (isSelected != dispositionIsSelected)
+        {
+            throw new ArgumentException("Selection disposition is inconsistent with the selected flag.", nameof(disposition));
+        }
+
         var materialized = matchedRuleIds.ToImmutableArray();
         if (materialized.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException("Matched rule IDs cannot contain empty values.", nameof(matchedRuleIds));
+        }
+
+        if (materialized.Distinct(StringComparer.Ordinal).Count() != materialized.Length)
+        {
+            throw new ArgumentException("Matched rule IDs must be unique within a selection decision.", nameof(matchedRuleIds));
         }
 
         Entry = entry;
