@@ -20,10 +20,12 @@ jobs:
   foundation-build-test:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -33,6 +35,31 @@ jobs:
       - name: Restore and generate NuGet lock files
         shell: pwsh
         run: dotnet restore .\UFOps.slnx
+
+      - name: Materialize dependency locks into branch once
+        shell: pwsh
+        run: |
+          $locks = Get-ChildItem -Path . -Filter packages.lock.json -Recurse -File | ForEach-Object {
+            $_.FullName.Substring((Get-Location).Path.Length + 1)
+          }
+          if ($locks.Count -ne 5) { throw "Expected exactly 5 dependency lock files, found $($locks.Count)." }
+          git add -- $locks
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            'LOCK_FILES_ALREADY_MATERIALIZED=YES' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'FREEZE-00: materialize qualified NuGet lock files'
+            git push origin HEAD:freeze-00-foundation
+            'LOCK_FILES_MATERIALIZED_THIS_RUN=YES' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+
+      - name: Stop superseded run after lock materialization
+        if: env.LOCK_FILES_MATERIALIZED_THIS_RUN == 'YES'
+        shell: pwsh
+        run: |
+          throw 'Dependency lock files were committed from the qualified Windows restore. This run is intentionally superseded; the automatically triggered run on the locked commit is authoritative.'
 
       - name: Build with warnings as errors
         shell: pwsh
@@ -71,6 +98,8 @@ jobs:
           foreach ($path in $projects) {
             if (-not (Test-Path -LiteralPath $path)) { throw "Missing required lock file: $path" }
           }
+          git diff --exit-code -- $projects
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency lock files drifted during qualification.' }
 
       - name: Build evidence package
         shell: pwsh
@@ -97,6 +126,7 @@ jobs:
             'Real Foundation tests: PASS',
             'WinUI Foundation host publish: PASS',
             'Dependency lock generation: PASS',
+            'Dependency lock drift: NONE',
             'Test runner: Microsoft.Testing.Platform',
             'Freeze status: CANDIDATE ONLY'
           ) | Set-Content -LiteralPath $evidence\FOUNDATION_EVIDENCE.txt -Encoding utf8
