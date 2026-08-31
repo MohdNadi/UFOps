@@ -62,15 +62,20 @@ public sealed record ReconciliationItem
 
     public ReconciliationItem(string itemId, string value)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
+        ItemId = ValidateItemId(itemId, nameof(itemId));
         ArgumentNullException.ThrowIfNull(value);
-        if (itemId.Length > 128 || itemId.Any(char.IsWhiteSpace))
+        Value = value;
+    }
+
+    internal static string ValidateItemId(string value, string parameterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+        if (value.Length > 128 || value.Any(char.IsWhiteSpace))
         {
-            throw new ArgumentException("Reconciliation item ID must contain at most 128 non-whitespace characters.", nameof(itemId));
+            throw new ArgumentException("Reconciliation item ID must contain at most 128 non-whitespace characters.", parameterName);
         }
 
-        ItemId = itemId;
-        Value = value;
+        return value;
     }
 }
 
@@ -105,6 +110,17 @@ public sealed class ReconciliationRequest
         Normalization = normalization;
     }
 
+    internal static string ValidateSourceId(string value, string parameterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+        if (value.Length > 128 || value.Any(char.IsWhiteSpace))
+        {
+            throw new ArgumentException("Source ID must contain at most 128 non-whitespace characters.", parameterName);
+        }
+
+        return value;
+    }
+
     private static ImmutableArray<ReconciliationItem> MaterializeItems(
         IEnumerable<ReconciliationItem> items,
         string parameterName)
@@ -122,17 +138,6 @@ public sealed class ReconciliationRequest
 
         return materialized;
     }
-
-    private static string ValidateSourceId(string value, string parameterName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
-        if (value.Length > 128 || value.Any(char.IsWhiteSpace))
-        {
-            throw new ArgumentException("Source ID must contain at most 128 non-whitespace characters.", parameterName);
-        }
-
-        return value;
-    }
 }
 
 public sealed record ReconciledItem
@@ -143,11 +148,10 @@ public sealed record ReconciledItem
 
     public ReconciledItem(string itemId, string rawValue, string normalizedValue)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
+        ItemId = ReconciliationItem.ValidateItemId(itemId, nameof(itemId));
         ArgumentNullException.ThrowIfNull(rawValue);
         ArgumentException.ThrowIfNullOrEmpty(normalizedValue);
 
-        ItemId = itemId;
         RawValue = rawValue;
         NormalizedValue = normalizedValue;
     }
@@ -239,11 +243,11 @@ public sealed class ReconciliationResult
         ReconciliationNormalizationPolicy normalization,
         IEnumerable<ReconciliationGroup> groups)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(leftSourceId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(rightSourceId);
+        LeftSourceId = ReconciliationRequest.ValidateSourceId(leftSourceId, nameof(leftSourceId));
+        RightSourceId = ReconciliationRequest.ValidateSourceId(rightSourceId, nameof(rightSourceId));
         ArgumentNullException.ThrowIfNull(normalization);
         ArgumentNullException.ThrowIfNull(groups);
-        if (string.Equals(leftSourceId, rightSourceId, StringComparison.Ordinal))
+        if (string.Equals(LeftSourceId, RightSourceId, StringComparison.Ordinal))
         {
             throw new ArgumentException("Result source identities must be distinct.", nameof(rightSourceId));
         }
@@ -260,10 +264,39 @@ public sealed class ReconciliationResult
             throw new ArgumentException("Reconciliation result contains duplicate canonical keys.", nameof(groups));
         }
 
-        LeftSourceId = leftSourceId;
-        RightSourceId = rightSourceId;
+        foreach (var group in materialized)
+        {
+            if (group.LeftItems.Any(item => !comparer.Equals(item.NormalizedValue, group.CanonicalKey))
+                || group.RightItems.Any(item => !comparer.Equals(item.NormalizedValue, group.CanonicalKey)))
+            {
+                throw new ArgumentException(
+                    "Every reconciled item's normalized value must match its group's canonical key under the declared case policy.",
+                    nameof(groups));
+            }
+        }
+
+        ValidateUniqueResultItemIds(materialized.SelectMany(group => group.LeftItems), "left", nameof(groups));
+        ValidateUniqueResultItemIds(materialized.SelectMany(group => group.RightItems), "right", nameof(groups));
+
+        Groups = materialized
+            .OrderBy(group => group.CanonicalKey, comparer)
+            .ThenBy(group => group.CanonicalKey, StringComparer.Ordinal)
+            .ToImmutableArray();
         Normalization = normalization;
-        Groups = materialized;
-        Summary = new ReconciliationSummary(materialized);
+        Summary = new ReconciliationSummary(Groups);
+    }
+
+    private static void ValidateUniqueResultItemIds(
+        IEnumerable<ReconciledItem> items,
+        string side,
+        string parameterName)
+    {
+        var ids = items.Select(item => item.ItemId).ToArray();
+        if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Length)
+        {
+            throw new ArgumentException(
+                $"Reconciliation result repeats a source-item ID on the {side} side.",
+                parameterName);
+        }
     }
 }
