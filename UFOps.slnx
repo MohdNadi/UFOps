@@ -4,6 +4,8 @@
   <Project Path="src/UFOps.Foundation.Storage/UFOps.Foundation.Storage.csproj" />
   <Project Path="src/UFOps.Foundation.Host/UFOps.Foundation.Host.csproj" />
   <Project Path="src/UFOps.Discovery/UFOps.Discovery.csproj" />
+  <Project Path="src/UFOps.Query/UFOps.Query.csproj" />
   <Project Path="tests/UFOps.Foundation.Tests/UFOps.Foundation.Tests.csproj" />
   <Project Path="tests/UFOps.Discovery.Tests/UFOps.Discovery.Tests.csproj" />
+  <Project Path="tests/UFOps.Query.Tests/UFOps.Query.Tests.csproj" />
 </Solution>
