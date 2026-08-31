@@ -10,14 +10,13 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task DiscoversRecursiveUnicodeTreeInDeterministicOrder()
     {
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
-            var arabicDirectory = Path.Combine(root, "عيادة-الرياض");
-            var nestedDirectory = Path.Combine(arabicDirectory, "تقارير");
-            Directory.CreateDirectory(nestedDirectory);
+            var nested = Path.Combine(root, "عيادة-الرياض", "تقارير");
+            Directory.CreateDirectory(nested);
             var firstFile = Path.Combine(root, "alpha.txt");
-            var arabicFile = Path.Combine(nestedDirectory, "ملف-مريض.txt");
+            var arabicFile = Path.Combine(nested, "ملف-مريض.txt");
             await File.WriteAllTextAsync(firstFile, "alpha", TestContext.Current.CancellationToken);
             await File.WriteAllTextAsync(arabicFile, "بيانات", TestContext.Current.CancellationToken);
 
@@ -30,16 +29,11 @@ public sealed class DiscoveryEngineTests
             Assert.True(second.IsSuccess);
             Assert.False(first.Value.HasErrors);
             Assert.Contains(first.Value.Entries, entry => PathEquals(entry.FullPath, arabicFile));
-            Assert.Equal(
-                first.Value.Entries.Select(entry => entry.FullPath),
-                second.Value.Entries.Select(entry => entry.FullPath));
+            Assert.Equal(first.Value.Entries.Select(entry => entry.FullPath), second.Value.Entries.Select(entry => entry.FullPath));
 
             var actual = first.Value.Entries.Select(entry => entry.FullPath).ToArray();
-            var sorted = actual
-                .OrderBy(path => path, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
-                .ThenBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-            Assert.Equal(sorted, actual);
+            var expected = actual.OrderBy(path => path, PathComparer()).ThenBy(path => path, StringComparer.Ordinal).ToArray();
+            Assert.Equal(expected, actual);
         }
         finally
         {
@@ -50,7 +44,7 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task TopDirectoryOnlyDoesNotDescendIntoChildren()
     {
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             var child = Path.Combine(root, "child");
@@ -78,7 +72,7 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task DuplicateAndOverlappingRootsDoNotDuplicateEntries()
     {
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             var child = Path.Combine(root, "child");
@@ -105,12 +99,12 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task MissingRootProducesStructuredIssueWithoutHidingValidResults()
     {
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             var file = Path.Combine(root, "present.txt");
-            await File.WriteAllTextAsync(file, "present", TestContext.Current.CancellationToken);
             var missing = Path.Combine(root, "does-not-exist");
+            await File.WriteAllTextAsync(file, "present", TestContext.Current.CancellationToken);
 
             var result = await new DiscoveryEngine().DiscoverAsync(
                 new DiscoveryRequest([root, missing]),
@@ -135,11 +129,7 @@ public sealed class DiscoveryEngineTests
     {
         using var source = new CancellationTokenSource();
         source.Cancel();
-
-        var result = await new DiscoveryEngine().DiscoverAsync(
-            new DiscoveryRequest([Path.GetTempPath()]),
-            source.Token);
-
+        var result = await new DiscoveryEngine().DiscoverAsync(new DiscoveryRequest([Path.GetTempPath()]), source.Token);
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorCategory.Cancelled, result.Error!.Category);
         Assert.Equal("DISCOVERY.CANCELLED", result.Error.Code.Value);
@@ -153,7 +143,7 @@ public sealed class DiscoveryEngineTests
             return;
         }
 
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             var current = root;
@@ -167,10 +157,7 @@ public sealed class DiscoveryEngineTests
             await File.WriteAllTextAsync(longFile, "long-path", TestContext.Current.CancellationToken);
             Assert.True(longFile.Length > 260, $"Test path must exceed 260 characters; actual length={longFile.Length}.");
 
-            var result = await new DiscoveryEngine().DiscoverAsync(
-                new DiscoveryRequest([root]),
-                TestContext.Current.CancellationToken);
-
+            var result = await new DiscoveryEngine().DiscoverAsync(new DiscoveryRequest([root]), TestContext.Current.CancellationToken);
             Assert.True(result.IsSuccess);
             Assert.Contains(result.Value.Entries, entry => PathEquals(entry.FullPath, longFile));
         }
@@ -188,13 +175,13 @@ public sealed class DiscoveryEngineTests
             return;
         }
 
-        var root = CreateTempRoot();
-        var target = CreateTempRoot();
+        var root = TempRoot();
+        var target = TempRoot();
+        var junction = Path.Combine(root, "junction");
         try
         {
             var targetFile = Path.Combine(target, "must-not-be-reached.txt");
             await File.WriteAllTextAsync(targetFile, "outside", TestContext.Current.CancellationToken);
-            var junction = Path.Combine(root, "junction");
             CreateJunction(junction, target);
 
             var skip = await new DiscoveryEngine().DiscoverAsync(
@@ -211,9 +198,11 @@ public sealed class DiscoveryEngineTests
             Assert.True(include.IsSuccess);
             Assert.Contains(include.Value.Entries, entry => PathEquals(entry.FullPath, junction) && entry.IsReparsePoint);
             Assert.DoesNotContain(include.Value.Entries, entry => entry.FullPath.EndsWith("must-not-be-reached.txt", StringComparison.OrdinalIgnoreCase));
+            Assert.True(File.Exists(targetFile), "Discovery must not mutate the reparse target.");
         }
         finally
         {
+            DeleteJunction(junction);
             DeleteTree(root);
             DeleteTree(target);
         }
@@ -227,7 +216,7 @@ public sealed class DiscoveryEngineTests
             return;
         }
 
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             var validFile = Path.Combine(root, "valid.txt");
@@ -256,8 +245,8 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task QualificationRunsAgainstRealFilesystemAndEngineSdkContract()
     {
-        var root = CreateTempRoot();
-        var evidence = CreateTempRoot();
+        var root = TempRoot();
+        var evidence = TempRoot();
         try
         {
             var engine = new DiscoveryEngine();
@@ -281,7 +270,7 @@ public sealed class DiscoveryEngineTests
     [Fact]
     public async Task DiscoveryOfFiveThousandFilesMeetsGatePerformanceBudget()
     {
-        var root = CreateTempRoot();
+        var root = TempRoot();
         try
         {
             for (var index = 0; index < 5000; index++)
@@ -293,16 +282,13 @@ public sealed class DiscoveryEngineTests
             }
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await new DiscoveryEngine().DiscoverAsync(
-                new DiscoveryRequest([root]),
-                TestContext.Current.CancellationToken);
+            var result = await new DiscoveryEngine().DiscoverAsync(new DiscoveryRequest([root]), TestContext.Current.CancellationToken);
             stopwatch.Stop();
 
             Assert.True(result.IsSuccess);
             Assert.False(result.Value.HasErrors);
             Assert.Equal(5001, result.Value.Entries.Length);
-            Assert.True(
-                stopwatch.Elapsed < TimeSpan.FromSeconds(15),
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(15),
                 $"Discovery performance budget exceeded: {stopwatch.Elapsed.TotalMilliseconds:F0} ms for 5000 files.");
         }
         finally
@@ -311,7 +297,7 @@ public sealed class DiscoveryEngineTests
         }
     }
 
-    private static string CreateTempRoot()
+    private static string TempRoot()
     {
         var path = Path.Combine(Path.GetTempPath(), "UFOps-Discovery-Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
@@ -324,6 +310,18 @@ public sealed class DiscoveryEngineTests
         {
             Directory.Delete(path, recursive: true);
         }
+    }
+
+    private static void DeleteJunction(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        var attributes = File.GetAttributes(path);
+        Assert.True((attributes & FileAttributes.ReparsePoint) != 0, "Cleanup path must still be a reparse point.");
+        Directory.Delete(path, recursive: false);
     }
 
     private static StringComparer PathComparer() =>
