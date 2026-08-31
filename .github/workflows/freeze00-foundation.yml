@@ -131,7 +131,7 @@ jobs:
             throw 'Release-build deployment folder is missing UFOps.Foundation.Host.dll.'
           }
           New-Item -ItemType Directory -Path .\out\FoundationHostRelease -Force | Out-Null
-          Copy-Item -LiteralPath (Join-Path $hostDir '*') -Destination .\out\FoundationHostRelease -Recurse -Force
+          Get-ChildItem -LiteralPath $hostDir -Force | Copy-Item -Destination .\out\FoundationHostRelease -Recurse -Force
           if (-not (Test-Path -LiteralPath .\out\FoundationHostRelease\UFOps.Foundation.Host.exe)) {
             throw 'Release-build deployment candidate was not staged.'
           }
