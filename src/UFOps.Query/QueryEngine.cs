@@ -222,7 +222,7 @@ public sealed class QueryEngine : IEngine
     private static Result<Regex> CompileGlob(SelectionRule rule)
     {
         var value = rule.Value!;
-        if (value.IndexOf('\0') >= 0 || value.IndexOfAny(['[', ']', '{', '}']) >= 0)
+        if (value.Contains('\0') || value.IndexOfAny(['[', ']', '{', '}']) >= 0)
         {
             return Result.Failure<Regex>(new UFOpsError(
                 new ErrorCode("QUERY.INVALID_GLOB"),
@@ -324,7 +324,7 @@ public sealed class QueryEngine : IEngine
 
     private static string NormalizeSeparators(string value) => value.Replace('\\', '/');
 
-    private static string NormalizeExtension(string value) => value.StartsWith('.', StringComparison.Ordinal)
+    private static string NormalizeExtension(string value) => value.StartsWith(".", StringComparison.Ordinal)
         ? value[1..]
         : value;
 
