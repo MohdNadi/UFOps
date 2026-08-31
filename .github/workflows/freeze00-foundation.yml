@@ -116,13 +116,24 @@ jobs:
             throw 'Foundation test evidence does not contain a success summary.'
           }
 
-      - name: Publish self-contained WinUI Foundation host
+      - name: Qualify Release-build WinUI deployment folder
         shell: pwsh
         run: |
-          dotnet publish .\src\UFOps.Foundation.Host\UFOps.Foundation.Host.csproj -c Release -r win-x64 --no-restore --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o .\out\FoundationHost
-          if ($LASTEXITCODE -ne 0) { throw "WinUI publish failed: $LASTEXITCODE" }
-          if (-not (Test-Path -LiteralPath .\out\FoundationHost\UFOps.Foundation.Host.exe)) {
-            throw 'Foundation host executable was not produced.'
+          $candidates = @(Get-ChildItem -Path .\src\UFOps.Foundation.Host\bin\Release -Filter UFOps.Foundation.Host.exe -Recurse -File)
+          if ($candidates.Count -ne 1) {
+            throw "Expected exactly one Release-build Foundation host executable, found $($candidates.Count)."
+          }
+          $hostDir = $candidates[0].Directory.FullName
+          if (-not (Test-Path -LiteralPath (Join-Path $hostDir 'Microsoft.UI.Xaml.dll'))) {
+            throw 'Release-build deployment folder is missing Microsoft.UI.Xaml.dll.'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $hostDir 'UFOps.Foundation.Host.dll'))) {
+            throw 'Release-build deployment folder is missing UFOps.Foundation.Host.dll.'
+          }
+          New-Item -ItemType Directory -Path .\out\FoundationHostRelease -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $hostDir '*') -Destination .\out\FoundationHostRelease -Recurse -Force
+          if (-not (Test-Path -LiteralPath .\out\FoundationHostRelease\UFOps.Foundation.Host.exe)) {
+            throw 'Release-build deployment candidate was not staged.'
           }
 
       - name: Verify repository remains clean after qualification
@@ -134,7 +145,7 @@ jobs:
             throw 'Qualification modified tracked or unexpected repository content.'
           }
 
-      - name: Build evidence and runtime candidate packages
+      - name: Build evidence and V3 runtime candidate package
         shell: pwsh
         run: |
           $evidence = '.\out\evidence'
@@ -148,11 +159,11 @@ jobs:
             $safeName = ($_.FullName.Substring((Get-Location).Path.Length + 1) -replace '[\\/:*?"<>|]', '_')
             Copy-Item $_.FullName (Join-Path $evidence $safeName)
           }
-          Get-ChildItem .\out\FoundationHost -File -Recurse | Sort-Object FullName | ForEach-Object {
-            $relative = $_.FullName.Substring((Resolve-Path .\out\FoundationHost).Path.Length + 1)
+          Get-ChildItem .\out\FoundationHostRelease -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring((Resolve-Path .\out\FoundationHostRelease).Path.Length + 1)
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
-          } | Set-Content -LiteralPath $evidence\FOUNDATION_HOST_SHA256.txt -Encoding ascii
+          } | Set-Content -LiteralPath $evidence\FOUNDATION_HOST_RELEASE_SHA256.txt -Encoding ascii
           @(
             'Gate: FREEZE-00 Foundation',
             "Commit: $env:GITHUB_SHA",
@@ -161,14 +172,12 @@ jobs:
             'Warnings-as-errors build: PASS',
             'Managed assembly reproducibility: PASS',
             'Real Foundation tests: PASS',
-            'WinUI Foundation host publish: PASS',
-            'Unpackaged self-contained deployment: EnableMsixTooling=true',
-            'PublishTrimmed: false',
-            'PublishSingleFile: false',
-            'PublishReadyToRun: false',
+            'WinUI Release-build deployment staging: PASS',
             'Dependency lock drift: NONE',
             'Unexpected repository drift: NONE',
             'Test runner: Microsoft.Testing.Platform',
+            'V1/V2 publish-path runtime qualification failed on the target Windows 11 device.',
+            'V3 deliberately uses the qualified Release-build output instead of dotnet publish.',
             'Freeze status: CANDIDATE ONLY — interactive Windows runtime qualification still required'
           ) | Set-Content -LiteralPath $evidence\FOUNDATION_EVIDENCE.txt -Encoding utf8
           Get-ChildItem $evidence -File | Sort-Object Name | ForEach-Object {
@@ -177,15 +186,15 @@ jobs:
           } | Set-Content -LiteralPath $evidence\MANIFEST_SHA256.txt -Encoding ascii
           Compress-Archive -Path $evidence\* -DestinationPath .\out\FREEZE00_FOUNDATION_CANDIDATE_EVIDENCE.zip -CompressionLevel Optimal -Force
 
-          $runtimeRoot = '.\out\runtime-package'
+          $runtimeRoot = '.\out\runtime-package-v3'
           New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
-          Copy-Item .\out\FoundationHost\* $runtimeRoot -Recurse -Force
+          Copy-Item .\out\FoundationHostRelease\* $runtimeRoot -Recurse -Force
           @(
-            'UFOps FREEZE-00 Foundation Runtime Qualification Candidate V2',
+            'UFOps FREEZE-00 Foundation Runtime Qualification Candidate V3',
             "Commit: $env:GITHUB_SHA",
-            'Purpose: run the real self-contained WinUI 3 Foundation host on an interactive Windows 11 x64 device.',
+            'Deployment source: qualified Release-build output (not dotnet publish).',
+            'Purpose: bypass the confirmed publish-only WinUI startup-failure path while preserving the same real Foundation host.',
             'Expected visible result after launch: Foundation health: PASS.',
-            'This candidate includes the unpackaged self-contained WinUI publish startup correction.',
             'This is a qualification host, not the final product UI.'
           ) | Set-Content -LiteralPath $runtimeRoot\RUNTIME_QUALIFICATION.txt -Encoding utf8
           Get-ChildItem $runtimeRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
@@ -193,7 +202,7 @@ jobs:
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), $relative
           } | Set-Content -LiteralPath $runtimeRoot\MANIFEST_SHA256.txt -Encoding ascii
-          Compress-Archive -Path $runtimeRoot\* -DestinationPath .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2.zip -CompressionLevel Optimal -Force
+          Compress-Archive -Path $runtimeRoot\* -DestinationPath .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V3.zip -CompressionLevel Optimal -Force
 
       - name: Upload Foundation evidence
         uses: actions/upload-artifact@v4
@@ -203,10 +212,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload single runtime qualification package
+      - name: Upload single V3 runtime qualification package
         uses: actions/upload-artifact@v4
         with:
-          name: FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2
-          path: .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V2.zip
+          name: FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V3
+          path: .\out\FREEZE00_FOUNDATION_RUNTIME_QUALIFICATION_V3.zip
           if-no-files-found: error
           retention-days: 30
