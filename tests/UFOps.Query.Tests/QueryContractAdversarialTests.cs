@@ -57,6 +57,67 @@ public sealed class QueryContractAdversarialTests
     }
 
     [Fact]
+    public void ExactRuleWithoutFieldIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new SelectionRule(
+            "missing-field",
+            SelectionRuleStage.Include,
+            SelectionRuleKind.Exact,
+            value: "item.txt"));
+    }
+
+    [Fact]
+    public void FileSizeRuleWithoutBoundsIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new SelectionRule(
+            "missing-size-bounds",
+            SelectionRuleStage.Include,
+            SelectionRuleKind.FileSizeRange));
+    }
+
+    [Fact]
+    public void FileSizeRuleWithReversedBoundsIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new SelectionRule(
+            "reversed-size-bounds",
+            SelectionRuleStage.Include,
+            SelectionRuleKind.FileSizeRange,
+            minimumBytes: 200,
+            maximumBytes: 100));
+    }
+
+    [Fact]
+    public void TextRuleWithUnrelatedSizePredicateIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new SelectionRule(
+            "mixed-rule-shape",
+            SelectionRuleStage.Include,
+            SelectionRuleKind.Exact,
+            SelectionField.FileName,
+            "item.txt",
+            minimumBytes: 1));
+    }
+
+    [Fact]
+    public void DuplicateRuleIdsAreRejectedByRequest()
+    {
+        var first = new SelectionRule(
+            "same-rule",
+            SelectionRuleStage.Include,
+            SelectionRuleKind.Extension,
+            value: ".txt");
+        var second = new SelectionRule(
+            "same-rule",
+            SelectionRuleStage.Exclude,
+            SelectionRuleKind.Extension,
+            value: ".tmp");
+
+        Assert.Throws<ArgumentException>(() => new SelectionRequest(
+            [CreateEntry()],
+            [first, second]));
+    }
+
+    [Fact]
     public void UndefinedDecisionDispositionIsRejected()
     {
         var entry = CreateEntry();
