@@ -58,11 +58,7 @@ public sealed class OperationPlan
 
     public OperationPlan(OperationId operationId, int revision, DateTimeOffset createdUtc, IEnumerable<PlannedItem> items)
     {
-        if (revision < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(revision));
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThan(revision, 1);
         ArgumentNullException.ThrowIfNull(items);
         var materialized = items.ToImmutableArray();
         if (materialized.IsDefaultOrEmpty)

@@ -46,7 +46,7 @@ public sealed class CoreContractTests
     public void FailureResultDoesNotExposeValue()
     {
         var error = new UFOpsError(new ErrorCode("FOUNDATION.TEST_FAILURE"), ErrorCategory.Validation, "Expected test failure.");
-        var result = Result<string>.Failure(error);
+        var result = Result.Failure<string>(error);
         Assert.True(result.IsFailure);
         Assert.Same(error, result.Error);
         Assert.Throws<InvalidOperationException>(() => result.Value);

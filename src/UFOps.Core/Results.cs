@@ -41,14 +41,17 @@ public sealed class Result<T>
         ? _value!
         : throw new InvalidOperationException("A failed result has no value.");
 
-    private Result(bool success, T? value, UFOpsError? error)
+    internal Result(bool success, T? value, UFOpsError? error)
     {
         IsSuccess = success;
         _value = value;
         Error = error;
     }
+}
 
-    public static Result<T> Success(T value)
+public static class Result
+{
+    public static Result<T> Success<T>(T value)
     {
         if (value is null)
         {
@@ -58,7 +61,7 @@ public sealed class Result<T>
         return new Result<T>(true, value, null);
     }
 
-    public static Result<T> Failure(UFOpsError error)
+    public static Result<T> Failure<T>(UFOpsError error)
     {
         ArgumentNullException.ThrowIfNull(error);
         return new Result<T>(false, default, error);

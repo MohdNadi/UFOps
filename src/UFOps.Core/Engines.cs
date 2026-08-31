@@ -10,11 +10,7 @@ public sealed record EngineCapability
 
     public EngineCapability(CapabilityId id, int contractVersion, string description)
     {
-        if (contractVersion < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(contractVersion));
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThan(contractVersion, 1);
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
         Id = id;
         ContractVersion = contractVersion;
