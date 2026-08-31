@@ -1,0 +1,1 @@
+No UFOps product engine implementation is authorized until TQ-00 establishes a real Windows build/test path and the qualification evidence is reviewed.
