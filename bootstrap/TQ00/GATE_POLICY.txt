@@ -1,0 +1,1 @@
+TQ-00 acceptance requires actual Windows execution evidence. Cross-compilation or static inspection alone is insufficient for Windows qualification.
