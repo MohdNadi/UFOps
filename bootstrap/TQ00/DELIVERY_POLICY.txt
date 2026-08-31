@@ -1,0 +1,1 @@
+User delivery policy: do not deliver source code as the runnable deliverable. Deliver ready executable tools only. If a delivery contains multiple files, provide them together in one ZIP package.
