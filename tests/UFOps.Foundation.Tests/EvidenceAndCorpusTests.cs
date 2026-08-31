@@ -8,15 +8,16 @@ public sealed class EvidenceAndCorpusTests
     [Fact]
     public async Task EvidenceWriterPersistsValidJsonLinesToRealFile()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var root = Path.Combine(Path.GetTempPath(), "ufops-evidence-tests", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(root, "evidence.jsonl");
         try
         {
             using var writer = new JsonLinesEvidenceWriter(path);
-            await writer.AppendAsync(EvidenceRecord.Create("foundation", "first", EvidenceOutcome.Pass, DateTimeOffset.UtcNow));
-            await writer.AppendAsync(EvidenceRecord.Create("foundation", "second", EvidenceOutcome.Info, DateTimeOffset.UtcNow));
+            await writer.AppendAsync(EvidenceRecord.Create("foundation", "first", EvidenceOutcome.Pass, DateTimeOffset.UtcNow), cancellationToken);
+            await writer.AppendAsync(EvidenceRecord.Create("foundation", "second", EvidenceOutcome.Info, DateTimeOffset.UtcNow), cancellationToken);
 
-            var lines = await File.ReadAllLinesAsync(path);
+            var lines = await File.ReadAllLinesAsync(path, cancellationToken);
             Assert.Equal(2, lines.Length);
             foreach (var line in lines)
             {
