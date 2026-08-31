@@ -74,6 +74,11 @@ public sealed class ReconciliationEngine : IEngine
             .ThenBy(group => group.CanonicalKey, StringComparer.Ordinal)
             .ToImmutableArray();
 
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ValueTask.FromResult(CancelledFailure());
+        }
+
         return ValueTask.FromResult(Result.Success(new ReconciliationResult(
             request.LeftSourceId,
             request.RightSourceId,
