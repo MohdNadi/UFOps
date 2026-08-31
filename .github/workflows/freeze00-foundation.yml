@@ -38,11 +38,17 @@ jobs:
         shell: pwsh
         run: dotnet build .\UFOps.slnx -c Release --no-restore
 
-      - name: Run real Foundation tests
+      - name: Run real Foundation tests with Microsoft.Testing.Platform
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path .\out\TestResults -Force | Out-Null
-          dotnet test .\tests\UFOps.Foundation.Tests\UFOps.Foundation.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=foundation.trx" --results-directory .\out\TestResults
+          $output = & dotnet test .\tests\UFOps.Foundation.Tests\UFOps.Foundation.Tests.csproj -c Release --no-build --no-restore --results-directory .\out\TestResults 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath .\out\TestResults\FOUNDATION_TEST_RUN.txt
+          if ($exitCode -ne 0) { throw "Foundation tests failed with exit code $exitCode" }
+          if (-not (Select-String -LiteralPath .\out\TestResults\FOUNDATION_TEST_RUN.txt -Pattern 'succeeded|passed' -CaseSensitive:$false -Quiet)) {
+            throw 'Foundation test evidence does not contain a success summary.'
+          }
 
       - name: Verify dependency lock files were generated
         shell: pwsh
@@ -62,7 +68,7 @@ jobs:
         run: |
           $evidence = '.\out\evidence'
           New-Item -ItemType Directory -Path $evidence -Force | Out-Null
-          Copy-Item .\out\TestResults\foundation.trx $evidence\foundation.trx
+          Copy-Item .\out\TestResults\FOUNDATION_TEST_RUN.txt $evidence\FOUNDATION_TEST_RUN.txt
           dotnet --info | Set-Content -LiteralPath $evidence\DOTNET_INFO.txt -Encoding utf8
           Get-ChildItem -Path . -Filter packages.lock.json -Recurse | Sort-Object FullName | ForEach-Object {
             $safeName = ($_.FullName.Substring((Get-Location).Path.Length + 1) -replace '[\\/:*?"<>|]', '_')
@@ -76,6 +82,7 @@ jobs:
             'Build: PASS',
             'Real Foundation tests: PASS',
             'Dependency lock generation: PASS',
+            'Test runner: Microsoft.Testing.Platform',
             'Freeze status: CANDIDATE ONLY'
           ) | Set-Content -LiteralPath $evidence\FOUNDATION_EVIDENCE.txt -Encoding utf8
           Get-ChildItem $evidence -File | Sort-Object Name | ForEach-Object {
