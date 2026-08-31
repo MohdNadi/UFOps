@@ -324,7 +324,7 @@ public sealed class QueryEngine : IEngine
 
     private static string NormalizeSeparators(string value) => value.Replace('\\', '/');
 
-    private static string NormalizeExtension(string value) => value.StartsWith(".", StringComparison.Ordinal)
+    private static string NormalizeExtension(string value) => value.Length > 0 && value[0] == '.'
         ? value[1..]
         : value;
 
